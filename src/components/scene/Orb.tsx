@@ -1,5 +1,5 @@
 import { useFrame } from '@react-three/fiber'
-import { forwardRef, useRef } from 'react'
+import { forwardRef, useEffect, useRef } from 'react'
 import {
   AdditiveBlending,
   DoubleSide,
@@ -17,6 +17,7 @@ import type { ObjectTransform } from '../../types'
 type OrbProps = {
   energy: number
   transform: ObjectTransform
+  lightEnabled?: boolean
 }
 
 /** Atom / neon reference: thin bright rings + hot core + haze + floor glow. */
@@ -146,7 +147,7 @@ const GLOW_FRAG = `
   }
 `
 
-export const Orb = forwardRef<Group, OrbProps>(({ energy, transform }, ref) => {
+export const Orb = forwardRef<Group, OrbProps>(({ energy, transform, lightEnabled = true }, ref) => {
   const groupRef = useRef<Group>(null)
   const ringRefs = useRef<Array<Mesh | null>>(Array(RING_COUNT).fill(null))
   const ringMatRefs = useRef<Array<ShaderMaterial | null>>(Array(RING_COUNT).fill(null))
@@ -157,6 +158,12 @@ export const Orb = forwardRef<Group, OrbProps>(({ energy, transform }, ref) => {
   const glowMatRef = useRef<ShaderMaterial>(null)
   const rimMatRef = useRef<ShaderMaterial>(null)
   const lightRef = useRef<PointLight>(null)
+  const lightEnabledRef = useRef(lightEnabled)
+  
+  useEffect(() => {
+    lightEnabledRef.current = lightEnabled
+  }, [lightEnabled])
+  
   const smoothedEnergy = useRef(0)
   const peakEnergy = useRef(0)
 
@@ -253,8 +260,12 @@ export const Orb = forwardRef<Group, OrbProps>(({ energy, transform }, ref) => {
       rimMatRef.current.uniforms.audioLevel.value = audioLevel
     }
     if (lightRef.current) {
-      lightRef.current.intensity = 22 + audioLevel * 58 + innerAudio * 20
-      lightRef.current.distance = 6.5 + audioLevel * 5.5
+      if (lightEnabledRef.current) {
+        lightRef.current.intensity = 22 + audioLevel * 58 + innerAudio * 20
+        lightRef.current.distance = 6.5 + audioLevel * 5.5
+      } else {
+        lightRef.current.intensity = 0
+      }
     }
   }, -1)
 

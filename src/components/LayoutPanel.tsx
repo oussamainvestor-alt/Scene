@@ -1,14 +1,25 @@
 import { useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import type { SceneLayout } from '../types'
+import type { SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from '../types'
 
 type LayoutPanelProps = {
   layout: SceneLayout
-  dragTarget: 'none' | 'orb' | 'screen'
-  onDragTargetChange: (next: 'none' | 'orb' | 'screen') => void
+  dragTarget: 'none' | 'orb' | 'screen' | 'ground'
+  onDragTargetChange: (next: 'none' | 'orb' | 'screen' | 'ground') => void
   onLayoutChange: (next: SceneLayout) => void
+  rendererType?: RendererType
+  onRendererTypeChange?: (next: RendererType) => void
+  hdrType?: HdrType
+  onHdrTypeChange?: (next: HdrType) => void
+  hdrFiles?: Array<{ label: string; value: string }>
+  orbLighting?: OrbLighting
+  onOrbLightingChange?: (next: OrbLighting) => void
+  groundGrid?: GroundGrid
+  onGroundGridChange?: (next: GroundGrid) => void
+  groupRotation?: number
+  onGroupRotationChange?: (next: number) => void
   onDownloadLayout: () => void
-  onUploadLayout: (file: File | null) => void
+  onUploadLayout?: (file: File | null) => void
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -129,6 +140,9 @@ export function LayoutPanel(props: LayoutPanelProps) {
         <h3>Layout Controls</h3>
       </div>
       <div className="layout-row">
+        <button className="btn secondary" onClick={() => props.onDragTargetChange('ground')}>
+          Drag ground
+        </button>
         <button className="btn secondary" onClick={() => props.onDragTargetChange('orb')}>
           Drag orb
         </button>
@@ -352,6 +366,79 @@ export function LayoutPanel(props: LayoutPanelProps) {
         />
       </div>
 
+      {props.rendererType !== undefined && props.onRendererTypeChange && (
+        <>
+          <p className="tiny-title">Renderer</p>
+          <select
+            className="select-input"
+            value={props.rendererType}
+            onChange={(e) => props.onRendererTypeChange?.(e.target.value as RendererType)}
+          >
+            <option value="webgpu">WebGPU</option>
+            <option value="webgl2">WebGL2</option>
+          </select>
+        </>
+      )}
+
+      {props.hdrType !== undefined && props.onHdrTypeChange && (
+        <>
+          <p className="tiny-title">HDR</p>
+          <select
+            className="select-input"
+            value={props.hdrType ?? ''}
+            onChange={(e) => props.onHdrTypeChange?.(e.target.value || null)}
+          >
+            <option value="">Off</option>
+            {props.hdrFiles?.map((hdr) => (
+              <option key={hdr.value} value={hdr.value}>
+                {hdr.label}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+
+      {props.groundGrid !== undefined && props.onGroundGridChange && (
+        <>
+          <p className="tiny-title">Ground Tiles</p>
+          <select
+            className="select-input"
+            value={props.groundGrid}
+            onChange={(e) => props.onGroundGridChange?.(Number(e.target.value) as GroundGrid)}
+          >
+            <option value={1}>1×1</option>
+            <option value={2}>2×2</option>
+            <option value={4}>4×4</option>
+          </select>
+        </>
+      )}
+
+      {props.groupRotation !== undefined && props.onGroupRotationChange && (
+        <>
+          <p className="tiny-title">Rotate (degrees)</p>
+          <input
+            type="number"
+            className="select-input"
+            value={(props.groupRotation * 180 / Math.PI) % 360}
+            onChange={(e) => props.onGroupRotationChange?.(Number(e.target.value) * Math.PI / 180)}
+          />
+        </>
+      )}
+
+      {props.orbLighting !== undefined && props.onOrbLightingChange && (
+        <>
+          <p className="tiny-title">Orb Light</p>
+          <select
+            className="select-input"
+            value={props.orbLighting ? 'on' : 'off'}
+            onChange={(e) => props.onOrbLightingChange?.(e.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </>
+      )}
+
       <div className="divider" />
       <div className="layout-row">
         <button className="btn secondary" onClick={props.onDownloadLayout}>
@@ -362,7 +449,9 @@ export function LayoutPanel(props: LayoutPanelProps) {
           <input
             type="file"
             accept="application/json"
-            onChange={(event) => props.onUploadLayout(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              props.onUploadLayout?.(event.target.files?.[0] ?? null)
+            }}
           />
         </label>
       </div>

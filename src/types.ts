@@ -29,4 +29,10 @@ export type SceneLayout = {
   objectReflection: number
   objectReflectionOpacity: number
   groundSurface: number
+  groupRotation: number
 }
+
+export type HdrType = string | null
+export type RendererType = 'webgl2' | 'webgpu'
+export type OrbLighting = boolean
+export type GroundGrid = 1 | 2 | 4

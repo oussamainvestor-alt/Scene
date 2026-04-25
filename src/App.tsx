@@ -6,7 +6,13 @@ import { EnvironmentScene } from './components/scene/EnvironmentScene'
 import type { EnvironmentSceneHandle } from './components/scene/EnvironmentScene'
 import { useAudioDriver } from './hooks/useAudioDriver'
 import { useRecorder } from './hooks/useRecorder'
-import type { CameraCoordinates, SceneLayout } from './types'
+import type { CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from './types'
+
+export const HDR_FILES: Array<{ label: string; value: string }> = [
+  { label: 'wooden_studio_04_4k.hdr', value: 'wooden_studio_04_4k.hdr' },
+  { label: 'church_stairway_4k.hdr', value: 'church_stairway_4k.hdr' },
+  { label: 'university_workshop_4k.hdr', value: 'university_workshop_4k.hdr' },
+]
 
 const DEFAULT_LAYOUT: SceneLayout = {
   orb: { position: [0, 1.35, 0], scale: 1 },
@@ -26,6 +32,7 @@ const DEFAULT_LAYOUT: SceneLayout = {
   objectReflection: 0.62,
   objectReflectionOpacity: 0.9,
   groundSurface: 0.5,
+  groupRotation: 0,
 }
 
 function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
@@ -59,6 +66,7 @@ function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
     layout.objectReflection ?? legacy.groundReflection ?? next.objectReflection
   next.objectReflectionOpacity = layout.objectReflectionOpacity ?? next.objectReflectionOpacity
   next.groundSurface = layout.groundSurface ?? legacy.groundReflection ?? next.groundSurface
+  next.groupRotation = layout.groupRotation ?? next.groupRotation
 
   return next
 }
@@ -67,7 +75,7 @@ type EditorSnapshot = {
   layout: SceneLayout
   camera: CameraCoordinates
   activeCameraPreset: CameraPresetId
-  dragTarget: 'none' | 'orb' | 'screen'
+  dragTarget: 'none' | 'orb' | 'screen' | 'ground'
 }
 
 const DEFAULT_CAMERA: CameraCoordinates = {
@@ -148,10 +156,14 @@ function App() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [videoFileName, setVideoFileName] = useState('No video selected')
   const [audioFileName, setAudioFileName] = useState('No audio selected')
-  const [dragTarget, setDragTarget] = useState<'none' | 'orb' | 'screen'>('none')
+  const [dragTarget, setDragTarget] = useState<'none' | 'orb' | 'screen' | 'ground'>('none')
   const [layout, setLayout] = useState<SceneLayout>(DEFAULT_LAYOUT)
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPresetId>('frontCenter')
   const [cameraCoordinates, setCameraCoordinates] = useState<CameraCoordinates>(DEFAULT_CAMERA)
+  const [rendererType, setRendererType] = useState<RendererType>('webgpu')
+  const [hdrType, setHdrType] = useState<HdrType>(null)
+  const [orbLighting, setOrbLighting] = useState<OrbLighting>(true)
+  const [groundGrid, setGroundGrid] = useState<GroundGrid>(1)
   const currentSnapshotRef = useRef<EditorSnapshot>({
     layout: structuredClone(DEFAULT_LAYOUT),
     camera: structuredClone(DEFAULT_CAMERA),
@@ -313,7 +325,7 @@ function App() {
     })
   }
 
-  const handleDragTargetChange = (next: 'none' | 'orb' | 'screen') => {
+  const handleDragTargetChange = (next: 'none' | 'orb' | 'screen' | 'ground') => {
     commitSnapshot({
       ...cloneSnapshot(currentSnapshotRef.current),
       dragTarget: next,
@@ -352,6 +364,17 @@ function App() {
         dragTarget={dragTarget}
         onDragTargetChange={handleDragTargetChange}
         onLayoutChange={handleLayoutChange}
+        rendererType={rendererType}
+        onRendererTypeChange={setRendererType}
+        hdrType={hdrType}
+        onHdrTypeChange={setHdrType}
+        hdrFiles={HDR_FILES}
+        orbLighting={orbLighting}
+        onOrbLightingChange={setOrbLighting}
+        groundGrid={groundGrid}
+        onGroundGridChange={setGroundGrid}
+        groupRotation={layout.groupRotation}
+        onGroupRotationChange={(r) => handleLayoutChange({ ...layout, groupRotation: r })}
         onDownloadLayout={handleLayoutDownload}
         onUploadLayout={handleLayoutUpload}
       />
@@ -404,6 +427,10 @@ function App() {
         ref={sceneRef}
         videoUrl={videoUrl}
         orbEnergy={orbEnergy}
+        orbLighting={orbLighting}
+        rendererType={rendererType}
+        hdrType={hdrType}
+        groundGrid={groundGrid}
         onCanvasReady={setCanvas}
         layout={layout}
         dragTarget={dragTarget}

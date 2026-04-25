@@ -1,19 +1,23 @@
-import { OrbitControls, TransformControls } from '@react-three/drei'
+import { OrbitControls, TransformControls, Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Group, Vector3 } from 'three'
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import type { CameraCoordinates, SceneLayout } from '../../types'
+import type { CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from '../../types'
 import { FloatingScreen } from './FloatingScreen'
 import { Orb } from './Orb'
-import { ReflectiveGround } from './ReflectiveGround'
+import { ConcreteGround } from './Ground'
 
 type EnvironmentSceneProps = {
   videoUrl: string | null
   orbEnergy: number
+  orbLighting?: OrbLighting
+  rendererType?: RendererType
+  hdrType?: HdrType
+  groundGrid?: GroundGrid
   onCanvasReady: (canvas: HTMLCanvasElement | null) => void
   layout: SceneLayout
-  dragTarget: 'none' | 'orb' | 'screen'
+  dragTarget: 'none' | 'orb' | 'screen' | 'ground'
   onLayoutChange: (next: SceneLayout) => void
   cameraCoordinates: CameraCoordinates
   onCameraCoordinatesChange: (next: CameraCoordinates) => void
@@ -31,6 +35,10 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
     {
       videoUrl,
       orbEnergy,
+      orbLighting,
+      rendererType,
+      hdrType,
+      groundGrid,
       onCanvasReady,
       layout,
       dragTarget,
@@ -43,6 +51,8 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
     const controlsRef = useRef<OrbitControlsImpl>(null)
     const orbRef = useRef<Group>(null)
     const screenRef = useRef<Group>(null)
+    const groundRef = useRef<Group>(null)
+    const groupRef = useRef<Group>(null)
 
     useEffect(() => {
       const zoomFactor = 1.08
@@ -193,6 +203,7 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
       <Canvas
         shadows
         dpr={[1, 1.6]}
+        gl={rendererType === 'webgpu' ? { powerPreference: 'high-performance', antialias: true } : undefined}
         camera={{ position: [4.2, 2.2, 4.4], fov: 40 }}
         onCreated={({ gl }) => {
           gl.setClearColor('#070a11')
@@ -221,13 +232,43 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
         />
         <pointLight intensity={0.7} position={[-2.5, 1.4, -2]} color="#41618f" />
 
-        <ReflectiveGround
-          objectReflection={layout.objectReflection}
-          objectReflectionOpacity={layout.objectReflectionOpacity}
-          groundSurface={layout.groundSurface}
-        />
-        <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} />
-        <FloatingScreen ref={screenRef} videoUrl={videoUrl} transform={layout.screen} />
+        {groundGrid === 1 ? (
+          <group ref={groundRef}>
+            <ConcreteGround scale={1} />
+          </group>
+        ) : groundGrid === 2 ? (
+          <group ref={groundRef}>
+            <ConcreteGround scale={1} position={[-2.5, 0, -2.5]} />
+            <ConcreteGround scale={1} position={[2.5, 0, -2.5]} />
+            <ConcreteGround scale={1} position={[-2.5, 0, 2.5]} />
+            <ConcreteGround scale={1} position={[2.5, 0, 2.5]} />
+          </group>
+        ) : (
+          <group>
+            <ConcreteGround scale={1} position={[-3.75, 0, -3.75]} />
+            <ConcreteGround scale={1} position={[-1.25, 0, -3.75]} />
+            <ConcreteGround scale={1} position={[1.25, 0, -3.75]} />
+            <ConcreteGround scale={1} position={[3.75, 0, -3.75]} />
+            <ConcreteGround scale={1} position={[-3.75, 0, -1.25]} />
+            <ConcreteGround scale={1} position={[-1.25, 0, -1.25]} />
+            <ConcreteGround scale={1} position={[1.25, 0, -1.25]} />
+            <ConcreteGround scale={1} position={[3.75, 0, -1.25]} />
+            <ConcreteGround scale={1} position={[-3.75, 0, 1.25]} />
+            <ConcreteGround scale={1} position={[-1.25, 0, 1.25]} />
+            <ConcreteGround scale={1} position={[1.25, 0, 1.25]} />
+            <ConcreteGround scale={1} position={[3.75, 0, 1.25]} />
+            <ConcreteGround scale={1} position={[-3.75, 0, 3.75]} />
+            <ConcreteGround scale={1} position={[-1.25, 0, 3.75]} />
+            <ConcreteGround scale={1} position={[1.25, 0, 3.75]} />
+            <ConcreteGround scale={1} position={[3.75, 0, 3.75]} />
+          </group>
+        )}
+        <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>
+          <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} lightEnabled={orbLighting} />
+
+          {hdrType && hdrType.length > 0 && <Environment background={false} files={`/${hdrType}`} />}
+          <FloatingScreen ref={screenRef} videoUrl={videoUrl} transform={layout.screen} />
+        </group>
 
         {dragTarget === 'orb' && orbRef.current && (
           <TransformControls
@@ -275,6 +316,19 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
                   scale: screenRef.current.scale.x,
                 },
               })
+            }}
+          />
+        )}
+
+        {dragTarget === 'ground' && groundRef.current && (
+          <TransformControls
+            object={groundRef.current}
+            mode="translate"
+            onMouseDown={() => {
+              if (controlsRef.current) controlsRef.current.enabled = false
+            }}
+            onMouseUp={() => {
+              if (controlsRef.current) controlsRef.current.enabled = true
             }}
           />
         )}
