@@ -78,6 +78,7 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
 
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.code === 'Space') {
+          event.preventDefault()
           spacePressed = true
           return
         }
@@ -122,10 +123,18 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
         if (key === 'ArrowRight') delta.addScaledVector(right, moveStep)
 
         if (delta.lengthSq() === 0) return
+
+        controls.enabled = false
         controls.object.position.add(delta)
         controls.target.add(delta)
         controls.update()
         emitCameraCoordinates()
+
+        setTimeout(() => {
+          if (controlsRef.current) {
+            controlsRef.current.enabled = true
+          }
+        }, 50)
       }
 
       const handleKeyUp = (event: KeyboardEvent) => {
@@ -182,8 +191,26 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
     useEffect(() => {
       const controls = controlsRef.current
       if (!controls) return
-      controls.object.position.set(...cameraCoordinates.position)
-      controls.target.set(...cameraCoordinates.target)
+
+      const eps = 0.001
+      const pos = controls.object.position
+      const tgt = controls.target
+      const [px, py, pz] = cameraCoordinates.position
+      const [tx, ty, tz] = cameraCoordinates.target
+
+      if (
+        Math.abs(pos.x - px) < eps &&
+        Math.abs(pos.y - py) < eps &&
+        Math.abs(pos.z - pz) < eps &&
+        Math.abs(tgt.x - tx) < eps &&
+        Math.abs(tgt.y - ty) < eps &&
+        Math.abs(tgt.z - tz) < eps
+      ) {
+        return
+      }
+
+      pos.set(px, py, pz)
+      tgt.set(tx, ty, tz)
       controls.object.zoom = cameraCoordinates.zoom || 1
       controls.object.updateProjectionMatrix()
       controls.update()
@@ -355,18 +382,29 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
               if (controlsRef.current) controlsRef.current.enabled = true
             }}
           />
-        )}
-
-        <mesh position={[0, 3.8, -9]}>
-          <planeGeometry args={[22, 12]} />
-          <meshBasicMaterial color="#070b12" />
-        </mesh>
+)}
+        {(() => {
+          const ws = (layout as any).worldSize ?? 1
+          const bgWidth = 22 * ws
+          const bgHeight = 12 * ws
+          const bgZ = -9 * ws
+          return (
+            <mesh position={[0, 3.8 * ws, bgZ]}>
+              <planeGeometry args={[bgWidth, bgHeight]} />
+              <meshBasicMaterial color="#070b12" />
+            </mesh>
+          )
+        })()}
         <OrbitControls
           ref={controlsRef}
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
           enablePan
           enableZoom
-          enableDamping
-          dampingFactor={0.06}
+          enableRotate
+          minDistance={0.5}
+          maxDistance={50}
           onEnd={emitCameraCoordinates}
         />
       </Canvas>

@@ -1,0 +1,150 @@
+# Camera Snapping Back Issue - Detailed Explanation
+
+## Project Context
+
+This is a React Three Fiber 3D scene project called "orb-scene". The user has keyboard controls for camera movement:
+
+- **Space + Arrow Up/Down** → Move camera vertically (up/down)
+- **Arrow Up/Down (no space)** → Move camera forward/backward
+- **Arrow Left/Right** → Pan camera left/right
+- **Ctrl + Arrow Up/Down** → Dolly zoom in/out
+
+## The Problem
+
+When pressing **Space + Down** or **Space + Up** to move the camera vertically:
+- If the user clicks the "Default" button first, then immediately tries to use Space+Arrow
+- The camera SNAPS BACK to its original position when the key is released
+- This only happens if the user hasn't moved the camera with the mouse first
+
+## Expected Behavior
+- Camera should smoothly move UP while holding Space+ArrowUp
+- Camera should stay at the NEW position when key is released
+- No snapping back
+
+## Current Implementation (src/components/scene/EnvironmentScene.tsx)
+
+### Keyboard Handler Setup
+```typescript
+useEffect(() => {
+  const zoomFactor = 1.08
+  const moveStep = 0.18
+  const verticalStep = 0.18
+  const upAxis = new Vector3(0, 1, 0)
+  const forward = new Vector3()
+  const right = new Vector3()
+  const delta = new Vector3()
+  let spacePressed = false
+
+  // Key down handler
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.code === 'Space') {
+      spacePressed = true
+      return
+    }
+    // ... arrow key handling ...
+  }
+
+  // Key up handler
+  const handleKeyUp = (event: KeyboardEvent) => {
+    if (event.code === 'Space') {
+      spacePressed = false
+    }
+  }
+
+  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keyup', handleKeyUp)
+}, [])
+```
+
+### Camera Position Update Logic
+```typescript
+// In handleKeyDown:
+if (delta.lengthSq() === 0) return
+
+controls.enabled = false
+controls.object.position.add(delta)
+controls.target.add(delta)
+controls.update()
+emitCameraCoordinates()
+
+setTimeout(() => {
+  if (controlsRef.current) {
+    controlsRef.current.enabled = true
+  }
+}, 50)
+```
+
+## What Was Tried
+
+1. **Removed enableDamping from OrbitControls** - Didn't fix the issue
+2. **Disabled controls.enabled during movement** - Only partial improvement
+3. **Added setTimeout to re-enable controls** - Still snaps back
+
+## Potential Root Causes
+
+### Theory 1: OrbitControls State Conflict
+When OrbitControls is enabled, it maintains internal state about the camera position. Even though we temporarily disable it, when it re-enables it might be restoring its last known "settled" position rather than accepting the new position.
+
+### Theory 2: Event Ordering
+The Space key up event might fire AFTER the camera position is reset internally, causing the snap. Or there might be a race condition between:
+- Our direct position update
+- OrbitControls' internal update cycle
+- The camera coordinate emission to React state
+
+### Theory 3: Missing Camera State Sync
+When we manually update `controls.object.position` and `controls.target`, we also call `emitCameraCoordinates()` to update React state. But if there's any delay or if OrbitControls updates AFTER our state update, the state might revert.
+
+### Theory 4: Keyboard Event Bubbling/Capture
+The Space key's keyup event might be triggering something else that resets camera position, OR the keydown for arrow keys might not be capturing properly when Space is held.
+
+## What Works vs What Doesn't
+
+### Works:
+- Camera moves correctly while key is held
+- Position is updated in OrbitControls
+- Camera coordinates are emitted to React state
+
+### Doesn't Work:
+- When Space is released, if user hasn't touched camera with mouse, it snaps back
+- After first mouse movement, keyboard controls work perfectly
+
+## Key Observations
+
+1. The issue ONLY happens when:
+   - User clicks "Default" button (sets camera position programmatically)
+   - User IMMEDIATELY tries Space+Arrow without any mouse interaction
+   - The Space key is then released
+
+2. The issue DOESN'T happen when:
+   - User moves camera with mouse first
+   - User uses arrow keys (no space) first
+
+3. This suggests OrbitControls has internal state that gets "stuck" when position is set programmatically vs user-driven
+
+## Suggested Fix Approaches
+
+### Approach 1: Force OrbitControls State Refresh
+After programmatically setting camera position, call a method to "reset" OrbitControls' internal state so it doesn't try to revert.
+
+### Approach 2: Prevent Space Key State Change
+Instead of tracking spacePressed as a boolean, track it more carefully or prevent the default behavior.
+
+### Approach 3: Separate Keyboard State from OrbitControls
+Completely disable OrbitControls while keyboard is active (not just temporarily).
+
+### Approach 4: Use a Flag System
+Set a flag when camera is moved programmatically, and have OrbitControls respect this flag.
+
+## Files Involved
+
+- `src/components/scene/EnvironmentScene.tsx` - Lines 57-143 (useEffect with keyboard handlers)
+- `src/components/scene/EnvironmentScene.tsx` - Lines 371-381 (OrbitControls setup)
+
+## The Goal
+
+A simple solution where:
+1. User clicks "Default" button
+2. User immediately presses and holds Space+Arrow
+3. Camera moves smoothly up/down
+4. When released, camera STAYS at the new position
+5. This works 100% of the time, not just after mouse interaction

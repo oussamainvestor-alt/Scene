@@ -1,0 +1,126 @@
+# Camera Default Button Issue - Detailed Explanation
+
+## Project Overview
+
+This is a React Three Fiber 3D scene project called "orb-scene" with:
+- A glowing energy orb
+- A floating curved video screen
+- Ground tiles
+- HDR environment lighting
+- Interactive controls for positioning objects and camera
+
+## The Issue
+
+We need a "Default" camera button that positions the camera to a specific, consistent view regardless of the rotation angle of the orb+screen group.
+
+## Current Setup
+
+### Layout Structure
+- `orb.position` = [0, 1.35, 0] (local space)
+- `screen.position` = [0, 1.65, -2.4] (local space)
+- `groupRotation` = rotation in radians of the group containing both orb and screen
+
+### The Rotation System
+The orb and screen are inside a group that rotates. The positions stored in layout are in **local space** (before rotation). When the group rotates, both objects rotate around the origin.
+
+### World Position Calculation
+To get actual world positions, we apply the rotation matrix:
+```
+worldX = localX * cos(rot) - localZ * sin(rot)
+worldZ = localX * sin(rot) + localZ * cos(rot)
+```
+
+## The Target View (Reference Image)
+
+https://media.discordapp.net/attachments/1490403442852757667/1497695688472137818/vlcsnap-2026-04-19-02h03m31s419.png
+
+The view shows:
+- Screen is dead center of view
+- Camera is positioned behind the orb (orb between camera and screen)
+- Camera looks at screen level (not from above or below)
+- This is the ONLY correct view - screen must always be center
+
+## The Problem
+
+Previous attempts to fix this resulted in:
+1. Screen appearing behind the camera
+2. Screen appearing on the side with orb dead center
+3. Inconsistent behavior at different rotation angles
+4. Camera targeting wrong object (orb instead of screen)
+
+## Current Broken Code
+
+```typescript
+type CameraPresetId = 'behindOrb'
+
+function getCameraPresetCoordinates(preset: CameraPresetId, layout: SceneLayout): CameraCoordinates {
+  const orbLocal = layout.orb.position
+  const screenLocal = layout.screen.position
+  const rot = layout.groupRotation || 0
+
+  const cosR = Math.cos(rot)
+  const sinR = Math.sin(rot)
+
+  const screenWorldX = screenLocal[0] * cosR - screenLocal[2] * sinR
+  const screenWorldZ = screenLocal[0] * sinR + screenLocal[2] * cosR
+
+  const orbWorldX = orbLocal[0] * cosR - orbLocal[2] * sinR
+  const orbWorldZ = orbLocal[0] * sinR + orbLocal[2] * cosR
+
+  const dx = orbWorldX - screenWorldX
+  const dz = orbWorldZ - screenWorldZ
+  const dist = Math.sqrt(dx * dx + dz * dz) || 1
+  const dirX = dx / dist
+  const dirZ = dz / dist
+
+  switch (preset) {
+    case 'behindOrb': {
+      const camDist = dist + 3
+      return {
+        position: [orbWorldX + dirX * camDist, screenLocal[1] + 0.3, orbWorldZ + dirZ * camDist],
+        target: [screenWorldX, screenLocal[1], screenWorldZ],
+        zoom: 1,
+      }
+    }
+  }
+}
+```
+
+## Requirements
+
+1. **Screen must always be dead center** of the camera view
+2. **Camera must always be behind the orb** (orb visible between camera and screen)
+3. **Must work at ANY rotation angle** (0°, 90°, 180°, -90°, etc.)
+4. **Camera looks at screen level** (same Y height as screen, +0.3 offset for slight upward angle)
+
+## The Key Insight
+
+The direction from screen to orb in world space tells us which way "behind orb" is. Camera should be placed on the orb side of this line, targeting the screen.
+
+If `dir = normalize(orbWorld - screenWorld)`, then camera position = `screenWorld + dir * distance`.
+
+Wait - that's wrong. If dir points from screen to orb, then placing camera at `screen + dir * dist` puts camera on the ORB side of screen, looking BACK at screen. That's correct!
+
+But the current code does `orbWorld + dir * camDist` which places camera on the SCREEN side of orb, looking AT screen from behind. That's actually also correct but puts screen behind.
+
+We need: camera on orb side, looking at screen.
+So: camera = `orbWorld + dir * distance` where `dir = normalize(screenWorld - orbWorld)`
+Wait no - that points from orb to screen, so camera would be on screen side.
+
+Actually: `dir = normalize(screenWorld - orbWorld)` points FROM orb TO screen.
+Camera on orb side means: `orbWorld - dir * distance`
+
+## Files Involved
+
+- `src/App.tsx` - Contains `getCameraPresetCoordinates` function (lines 116-145)
+- `src/types.ts` - SceneLayout type definition
+- `src/components/scene/EnvironmentScene.tsx` - 3D scene setup
+
+## What We Need
+
+A simple formula that:
+1. Calculates world positions of orb and screen
+2. Finds direction from orb to screen
+3. Places camera behind orb (opposite direction from screen)
+4. Aims camera at screen center
+5. Works at any rotation angle

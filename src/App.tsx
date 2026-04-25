@@ -6,7 +6,7 @@ import { EnvironmentScene } from './components/scene/EnvironmentScene'
 import type { EnvironmentSceneHandle } from './components/scene/EnvironmentScene'
 import { useAudioDriver } from './hooks/useAudioDriver'
 import { useRecorder } from './hooks/useRecorder'
-import type { CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from './types'
+import type { Vec3, CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from './types'
 
 export const HDR_FILES: Array<{ label: string; value: string }> = [
   { label: 'wooden_studio_04_4k.hdr', value: 'wooden_studio_04_4k.hdr' },
@@ -34,6 +34,7 @@ const DEFAULT_LAYOUT: SceneLayout = {
   objectReflectionOpacity: 0.9,
   groundSurface: 0.5,
   groupRotation: 0,
+  worldSize: 1,
 }
 
 function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
@@ -69,6 +70,7 @@ function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
   next.objectReflectionOpacity = layout.objectReflectionOpacity ?? next.objectReflectionOpacity
   next.groundSurface = layout.groundSurface ?? legacy.groundReflection ?? next.groundSurface
   next.groupRotation = layout.groupRotation ?? next.groupRotation
+  next.worldSize = layout.worldSize ?? next.worldSize
 
   return next
 }
@@ -81,8 +83,8 @@ type EditorSnapshot = {
 }
 
 const DEFAULT_CAMERA: CameraCoordinates = {
-  position: [4.2, 2.2, 4.4],
-  target: [0, 1.2, 0],
+  position: [0, 1.9, 4.4],
+  target: [0, 1.65, -2.4],
   zoom: 1,
 }
 
@@ -111,44 +113,37 @@ function downloadJsonFile(data: unknown, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-type CameraPresetId = 'frontCenter' | 'orbFocus' | 'rightAngle' | 'leftAngle' | 'topView'
+type CameraPresetId = 'behindOrb'
 
 function getCameraPresetCoordinates(preset: CameraPresetId, layout: SceneLayout): CameraCoordinates {
-  const orb = layout.orb.position
-  const screen = layout.screen.position
-  const zGap = Math.abs(orb[2] - screen[2])
+  const rot = layout.groupRotation || 0
+  const cosR = Math.cos(rot)
+  const sinR = Math.sin(rot)
+
+  const toWorld = (p: Vec3): Vec3 => [
+    p[0] * cosR - p[2] * sinR,
+    p[1],
+    p[0] * sinR + p[2] * cosR,
+  ]
+
+  const orbW = toWorld(layout.orb.position)
+  const screenW = toWorld(layout.screen.position)
+
+  const dx = screenW[0] - orbW[0]
+  const dz = screenW[2] - orbW[2]
+  const dist = Math.sqrt(dx * dx + dz * dz) || 1
+  const dirX = dx / dist
+  const dirZ = dz / dist
 
   switch (preset) {
-    case 'frontCenter':
+    case 'behindOrb': {
+      const camDist = Math.max(2.7, dist + 1.1)
       return {
-        position: [screen[0], screen[1], orb[2] + Math.max(2.7, zGap + 1.1)],
-        target: [screen[0], screen[1], screen[2]],
+        position: [orbW[0] - dirX * camDist, screenW[1] + 0.3, orbW[2] - dirZ * camDist],
+        target: [screenW[0], screenW[1], screenW[2]],
         zoom: 1,
       }
-    case 'orbFocus':
-      return {
-        position: [orb[0], orb[1] + 0.45, orb[2] + 2.2],
-        target: [orb[0], orb[1], orb[2]],
-        zoom: 1.05,
-      }
-    case 'rightAngle':
-      return {
-        position: [screen[0] + 2.2, screen[1] + 0.22, orb[2] + 2.0],
-        target: [screen[0], screen[1], screen[2]],
-        zoom: 1,
-      }
-    case 'leftAngle':
-      return {
-        position: [screen[0] - 2.2, screen[1] + 0.22, orb[2] + 2.0],
-        target: [screen[0], screen[1], screen[2]],
-        zoom: 1,
-      }
-    case 'topView':
-      return {
-        position: [screen[0], screen[1] + 3.4, orb[2] + 0.8],
-        target: [screen[0], screen[1] - 0.25, screen[2] + 0.5],
-        zoom: 1,
-      }
+    }
   }
 }
 
@@ -159,7 +154,7 @@ function App() {
   const [audioFileName, setAudioFileName] = useState('No audio selected')
   const [dragTarget, setDragTarget] = useState<'none' | 'orb' | 'screen' | 'ground'>('none')
   const [layout, setLayout] = useState<SceneLayout>(DEFAULT_LAYOUT)
-  const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPresetId>('frontCenter')
+  const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPresetId>('behindOrb')
   const [cameraCoordinates, setCameraCoordinates] = useState<CameraCoordinates>(DEFAULT_CAMERA)
   const [rendererType, setRendererType] = useState<RendererType>('webgpu')
   const [hdrType, setHdrType] = useState<HdrType>(null)
@@ -168,7 +163,7 @@ function App() {
   const currentSnapshotRef = useRef<EditorSnapshot>({
     layout: structuredClone(DEFAULT_LAYOUT),
     camera: structuredClone(DEFAULT_CAMERA),
-    activeCameraPreset: 'frontCenter',
+    activeCameraPreset: 'behindOrb',
     dragTarget: 'none',
   })
   const undoStackRef = useRef<EditorSnapshot[]>([])
@@ -284,7 +279,7 @@ function App() {
     commitSnapshot({
       ...cloneSnapshot(currentSnapshotRef.current),
       camera: parsed,
-      activeCameraPreset: 'frontCenter',
+      activeCameraPreset: 'behindOrb',
     })
   }
 
@@ -337,7 +332,7 @@ function App() {
     commitSnapshot({
       ...cloneSnapshot(currentSnapshotRef.current),
       camera: next,
-      activeCameraPreset: 'frontCenter',
+      activeCameraPreset: 'behindOrb',
     })
   }
 
@@ -392,34 +387,10 @@ function App() {
         <p className="camera-presets-title">Default Camera Positions</p>
         <div className="camera-presets-grid">
           <button
-            className={`btn secondary ${activeCameraPreset === 'frontCenter' ? 'is-active' : ''}`}
-            onClick={() => applyCameraPreset('frontCenter')}
+            className={`btn secondary ${activeCameraPreset === 'behindOrb' ? 'is-active' : ''}`}
+            onClick={() => applyCameraPreset('behindOrb')}
           >
-            Front Center
-          </button>
-          <button
-            className={`btn secondary ${activeCameraPreset === 'orbFocus' ? 'is-active' : ''}`}
-            onClick={() => applyCameraPreset('orbFocus')}
-          >
-            Orb Focus
-          </button>
-          <button
-            className={`btn secondary ${activeCameraPreset === 'rightAngle' ? 'is-active' : ''}`}
-            onClick={() => applyCameraPreset('rightAngle')}
-          >
-            Right Angle
-          </button>
-          <button
-            className={`btn secondary ${activeCameraPreset === 'leftAngle' ? 'is-active' : ''}`}
-            onClick={() => applyCameraPreset('leftAngle')}
-          >
-            Left Angle
-          </button>
-          <button
-            className={`btn secondary ${activeCameraPreset === 'topView' ? 'is-active' : ''}`}
-            onClick={() => applyCameraPreset('topView')}
-          >
-            Top View
+            Default
           </button>
         </div>
       </aside>

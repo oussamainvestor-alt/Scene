@@ -31,6 +31,7 @@ export type SceneLayout = {
   objectReflectionOpacity: number
   groundSurface: number
   groupRotation: number
+  worldSize: number
 }
 
 export type HdrType = string | null

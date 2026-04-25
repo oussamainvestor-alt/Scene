@@ -1,0 +1,171 @@
+# Screen Curving - Video Meshing Issue
+
+## Project Context
+
+This is a React Three Fiber 3D scene project called "orb-scene". The key feature is a curved floating video screen that plays user-uploaded videos.
+
+## Current Implementation
+
+### Screen Structure (src/components/scene/FloatingScreen.tsx)
+
+The screen uses:
+- A planeGeometry with 64x64 segments
+- Custom vertex shader that warps the mesh vertices
+- Custom fragment shader that draws the video
+
+### Current Vertex Shader
+The vertex shader curves the mesh geometry by displacing vertices:
+```glsl
+varying vec2 vUv;
+varying vec3 vLocalPos;
+uniform float uCurveTop, uCurveBottom, uCurveLeft, uCurveRight;
+
+void main() {
+  vUv = uv;
+  vLocalPos = position;
+  
+  vec3 warped = position;
+  float nx = uv.x * 2.0 - 1.0;
+  float ny = uv.y * 2.0 - 1.0;
+  
+  float topWeight = smoothstep(0.0, 1.0, uv.y) * (1.0 - nx * nx);
+  float bottomWeight = smoothstep(0.0, 1.0, 1.0 - uv.y) * (1.0 - nx * nx);
+  float leftWeight = smoothstep(0.0, 1.0, 1.0 - uv.x) * (1.0 - ny * ny);
+  float rightWeight = smoothstep(0.0, 1.0, uv.x) * (1.0 - ny * ny);
+  
+  warped.y += ((uCurveTop * topWeight) - (uCurveBottom * bottomWeight)) * 1.8;
+  warped.x += ((uCurveRight * rightWeight) - (uCurveLeft * leftWeight)) * 1.8;
+  
+  float depthCurve = (uCurveTop * topWeight) + (uCurveBottom * bottomWeight)
+                   + (uCurveLeft * leftWeight) + (uCurveRight * rightWeight);
+  warped.z += depthCurve * 0.9;
+  
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(warped, 1.0);
+}
+```
+
+### Current Fragment Shader (Problematic)
+```glsl
+void main() {
+  vec2 flatUv = vec2(vLocalPos.x / uSize.x + 0.5, vLocalPos.y / uSize.y + 0.5);
+  
+  // SDF clip
+  vec2 centered = (flatUv - 0.5) * uSize;
+  float d = roundedRectSdf(centered, 0.5 * uSize, uRadius);
+  if (d > 0.0) discard;
+  
+  // Video sampling using flatUv
+  if (uHasVideo > 0.5) {
+    float videoW, videoH;
+    if (uVideoAspect > uScreenAspect) {
+      videoW = 1.0;
+      videoH = uScreenAspect / uVideoAspect;
+    } else {
+      videoW = uVideoAspect / uScreenAspect;
+      videoH = 1.0;
+    }
+    
+    videoW *= uContentScale;
+    videoH *= uContentScale;
+    
+    float xMin = 0.5 - videoW * 0.5;
+    float yMin = 0.5 - videoH * 0.5;
+    float xMax = 0.5 + videoW * 0.5;
+    float yMax = 0.5 + videoH * 0.5;
+    
+    if (flatUv.x >= xMin && flatUv.x <= xMax && flatUv.y >= yMin && flatUv.y <= yMax) {
+      vec2 texUv = vec2((flatUv.x - xMin) / videoW, (flatUv.y - yMin) / videoH);
+      color = texture2D(uVideoTex, texUv).rgb;
+    }
+  }
+}
+```
+
+## The Problems
+
+### Problem 1: Video Content Appears Meshed
+When screen curve is set to high values (e.g., 0.5 or higher), the video CONTENT appears MESHHED/BENT along with the screen geometry. This is wrong.
+
+**Analogy**: A curved TV - the glass is curved, but the image on it is FLAT. The content should never bend.
+
+### Problem 2: Dead Space at Curved Edges (NEW - See Image)
+When positive curve is applied, the curved edges create EXTRA/Dead SPACE that is outside the flat UV mapping area. The red line in the image shows this - there's a gap/void area that appears at the curved edges that the flat video doesn't cover.
+
+This happens because:
+- The vertex shader warps vertices OUTWARD (positive curve = bulges out)
+- This creates more surface area at the edges
+- But the flat UV mapping only covers the original flat plane area
+- The result is a "dead zone" at the curved edges where no video renders
+
+**Reference Image**: https://media.discordapp.net/attachments/1490403442852757667/1497716538000801823/image.png
+
+## What We Want
+
+1. **Curved SCREEN GEOMETRY** - The mesh vertices should warp/curve (current behavior is fine)
+2. **FLAT VIDEO CONTENT** - The video texture should appear flat on the curved surface, like projecting a flat image onto curved glass
+3. **Video covers ENTIRE screen** - When curved, video should stretch to fill the curved edges, no dead space
+4. **Content Scale control** - Works perfectly, allows zooming video to fill curved area
+5. **NO BEZELS** - No bezel/border around the screen
+6. **Rounded corners** - Screen still has rounded corners
+
+## The Fix Approach
+
+### Problem 1 Fix (Flat Video)
+The vertex shader warps the GEOMETRY, but the fragment shader should sample the video using FLAT UV coordinates that ignore the vertex warping.
+
+**Key insight**: The `vLocalPos` passed from vertex shader is the UN-WARPED position. Using this to calculate UVs gives us flat mapping regardless of how much the vertices are displaced.
+
+### Problem 2 Fix (Dead Space)
+The issue is that flat UVs based on vLocalPos don't account for the curvature creating more surface area. We need to:
+
+1. **Option A - Stretch UVs with Curve**: Calculate how much the edges curve and scale the video UVs to extend beyond the original bounds, filling the curved area
+2. **Option B - Use Screen-Space UVs**: Instead of using vLocalPos (which is the undeformed vertex position), use the actual warped position but map it back to UV space to get the curved video effect
+
+**Recommended approach**: Use screen-space UVs from the warped position. This way:
+- Video appears stretched/curved AT the edges (matching the curve)
+- No dead space - video fills the entire curved surface
+- The "curvature" of the video is actually just stretching at the edges, which looks like the video "hugging" the curve
+
+### Content Scale Logic
+- Keep the current contentScale uniform
+- contentScale should scale the video area AFTER accounting for curvature
+- When screen curves positively (creates more visible area), user can increase contentScale to fill it
+
+## Expected Behavior
+
+| Screen Curve | Geometry | Video Content |
+|--------------|----------|---------------|
+| 0 (flat) | Flat plane | Flat, full coverage |
+| Positive (0.3) | Curved edges bulge out | Video stretches to fill edges (no dead space) |
+| Negative (-0.3) | Concave edges | Video fills more of screen, may crop at center |
+
+The key is: **video should never have dead/missing areas** - it should always fill the visible screen area.
+
+## Files Involved
+
+- `src/components/scene/FloatingScreen.tsx` - Only file that needs changes
+  - Vertex shader logic (keep as-is)
+  - Fragment shader (modify to fix dead space issue)
+
+## Layout Controls
+
+Users control screen curve via LayoutPanel:
+- `edgeCurve.top`, `edgeCurve.bottom`, `edgeCurve.left`, `edgeCurve.right`
+- Range: -0.6 to 0.6
+- `curvePair`: 'horizontal' (top+bottom) or 'vertical' (left+right)
+
+Users control content scale via LayoutPanel:
+- `contentScale`: 0.5 to 2.0
+- Works independently of curve
+
+## What Needs to Be Fixed
+
+1. **Fragment shader** needs to use warped position (not vLocalPos) to calculate UVs so video fills the curved areas
+2. **UV mapping** should stretch video at curved edges to eliminate dead space
+3. **The combination** of curved geometry + stretched video = video that looks like it's displayed on the curved surface
+
+The fix should ensure:
+- Video is flat at center
+- Video stretches at edges to match curve
+- No dead/missing areas anywhere on screen
+- contentScale continues to work for zooming
