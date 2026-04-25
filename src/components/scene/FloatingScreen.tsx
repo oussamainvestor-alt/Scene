@@ -10,12 +10,14 @@ type FloatingScreenProps = {
 
 const VERTEX_SHADER = `
   varying vec2 vUv;
+  varying vec2 vFlatUv;
   uniform float uCurveTop;
   uniform float uCurveBottom;
   uniform float uCurveLeft;
   uniform float uCurveRight;
   void main() {
     vUv = uv;
+    vFlatUv = uv;
     vec3 warped = position;
     float nx = uv.x * 2.0 - 1.0;
     float ny = uv.y * 2.0 - 1.0;
@@ -35,13 +37,16 @@ const VERTEX_SHADER = `
 const FRAGMENT_SHADER = `
   precision highp float;
   varying vec2 vUv;
+  varying vec2 vFlatUv;
   uniform sampler2D uVideoTex;
   uniform float uVideoAspect;
   uniform float uScreenAspect;
   uniform float uHasVideo;
   uniform float uRadius;
   uniform vec2 uSize;
+  uniform vec3 uBezelColor;
   uniform vec3 uBackground;
+  uniform float uBezelWidth;
 
   float roundedRectSdf(vec2 p, vec2 halfSize, float radius) {
     vec2 q = abs(p) - (halfSize - vec2(radius));
@@ -51,28 +56,36 @@ const FRAGMENT_SHADER = `
   void main() {
     vec2 centered = (vUv - 0.5) * uSize;
     float d = roundedRectSdf(centered, 0.5 * uSize, uRadius);
+
     if (d > 0.0) discard;
+
+    float distFromEdge = -d;
+
+    if (distFromEdge < uBezelWidth) {
+      gl_FragColor = vec4(uBezelColor, 1.0);
+      return;
+    }
 
     vec3 color = uBackground;
 
     if (uHasVideo > 0.5) {
-      vec2 sampleUv = vUv;
-      bool inside = true;
+      vec2 sampleUv = vFlatUv;
       if (uVideoAspect > uScreenAspect) {
         float h = uScreenAspect / uVideoAspect;
         float yMin = 0.5 - h * 0.5;
         float yMax = 0.5 + h * 0.5;
-        inside = vUv.y >= yMin && vUv.y <= yMax;
-        sampleUv = vec2(vUv.x, (vUv.y - yMin) / h);
+        if (vFlatUv.y >= yMin && vFlatUv.y <= yMax) {
+          sampleUv = vec2(vFlatUv.x, (vFlatUv.y - yMin) / h);
+          color = texture2D(uVideoTex, sampleUv).rgb;
+        }
       } else {
         float w = uVideoAspect / uScreenAspect;
         float xMin = 0.5 - w * 0.5;
         float xMax = 0.5 + w * 0.5;
-        inside = vUv.x >= xMin && vUv.x <= xMax;
-        sampleUv = vec2((vUv.x - xMin) / w, vUv.y);
-      }
-      if (inside) {
-        color = texture2D(uVideoTex, sampleUv).rgb;
+        if (vFlatUv.x >= xMin && vFlatUv.x <= xMax) {
+          sampleUv = vec2((vFlatUv.x - xMin) / w, vFlatUv.y);
+          color = texture2D(uVideoTex, sampleUv).rgb;
+        }
       }
     }
 
@@ -87,6 +100,7 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
   const planeHeight = planeWidth / screenAspect
   const safeRadius = Math.min(Math.max(0, transform.borderRadius), Math.min(planeWidth, planeHeight) * 0.45)
   const { top, bottom, left, right } = transform.edgeCurve
+  const bezelWidth = 0.08
 
   const [videoAspect, setVideoAspect] = useState(16 / 9)
   const lastPlayAttemptMs = useRef(0)
@@ -100,7 +114,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
     return t
   }, [videoEl])
 
-  // Create the material imperatively — we own and mutate its uniforms directly
   const material = useMemo(() => new ShaderMaterial({
     uniforms: {
       uVideoTex:     { value: videoTexture },
@@ -109,18 +122,19 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
       uHasVideo:     { value: 0 },
       uRadius:       { value: safeRadius },
       uSize:         { value: new Vector2(planeWidth, planeHeight) },
+      uBezelColor:   { value: new Vector3(0.02, 0.02, 0.02) },
       uBackground:   { value: new Vector3(0.03, 0.04, 0.07) },
       uCurveTop:     { value: top },
       uCurveBottom:  { value: bottom },
       uCurveLeft:    { value: left },
       uCurveRight:   { value: right },
+      uBezelWidth:   { value: bezelWidth },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
     toneMapped: false,
   }), [videoTexture]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Attach video element to the DOM so the browser decodes frames reliably
   useEffect(() => {
     const el = videoEl
     el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none'
@@ -130,7 +144,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
     }
   }, [videoEl])
 
-  // Video element setup — runs whenever the URL changes
   useEffect(() => {
     const attemptPlay = () => { videoEl.play().catch(() => undefined) }
 
@@ -171,7 +184,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
     }
   }, [videoEl, videoUrl, videoTexture])
 
-  // Update all uniforms and drive the texture every frame, right before Three.js renders
   useFrame(({ clock }) => {
     const u = material.uniforms
     u.uHasVideo.value     = videoUrl ? 1 : 0
@@ -197,10 +209,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
     }
   })
 
-  // Clean up the video element on unmount. We intentionally skip disposing the
-  // ShaderMaterial and VideoTexture here because React StrictMode reuses useMemo
-  // instances across its simulated unmount/remount cycle — disposing them in the
-  // cleanup would break Three.js's WebGL texture and program tracking on remount.
   useEffect(() => {
     return () => {
       videoEl.pause()

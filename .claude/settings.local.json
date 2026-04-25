@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(npx tsc *)",
+      "Bash(node *)",
+      "Bash(curl -s -X POST http://localhost:3001/log -d \"test ping\")",
+      "Bash(cat vercel.json)",
+      "Bash(which vercel *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(npm install *)",
+      "Bash(vercel *)"
     ]
   }
 }
