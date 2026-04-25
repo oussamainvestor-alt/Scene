@@ -103,24 +103,6 @@ export function LayoutPanel(props: LayoutPanelProps) {
     props.onLayoutChange(next)
   }
 
-  const setObjectReflection = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.objectReflection = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
-
-  const setObjectReflectionOpacity = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.objectReflectionOpacity = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
-
-  const setGroundSurface = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.groundSurface = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
-
   const curvePair = props.layout.screen.curvePair
   const firstCurveKey = curvePair === 'horizontal' ? 'top' : 'left'
   const secondCurveKey = curvePair === 'horizontal' ? 'bottom' : 'right'
@@ -339,64 +321,6 @@ export function LayoutPanel(props: LayoutPanelProps) {
           onChange={(e) => setScreenContentScale(Number(e.target.value))}
         />
       </div>
-      <p className="tiny-title">Reflection: Objects (Orb + Screen)</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflection}
-          onChange={(e) => setObjectReflection(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflection}
-          onChange={(e) => setObjectReflection(Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Reflection: Objects Opacity</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflectionOpacity}
-          onChange={(e) => setObjectReflectionOpacity(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflectionOpacity}
-          onChange={(e) => setObjectReflectionOpacity(Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Ground Surface Strength</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.groundSurface}
-          onChange={(e) => setGroundSurface(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.groundSurface}
-          onChange={(e) => setGroundSurface(Number(e.target.value))}
-        />
-      </div>
-
       {props.rendererType !== undefined && props.onRendererTypeChange && (
         <>
           <p className="tiny-title">Renderer</p>

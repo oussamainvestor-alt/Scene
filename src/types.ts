@@ -27,9 +27,6 @@ export type ScreenTransform = ObjectTransform & {
 export type SceneLayout = {
   orb: ObjectTransform
   screen: ScreenTransform
-  objectReflection: number
-  objectReflectionOpacity: number
-  groundSurface: number
   groupRotation: number
   worldSize: number
 }

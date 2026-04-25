@@ -30,15 +30,11 @@ const DEFAULT_LAYOUT: SceneLayout = {
     },
     contentScale: 1,
   },
-  objectReflection: 0.62,
-  objectReflectionOpacity: 0.9,
-  groundSurface: 0.5,
   groupRotation: 0,
   worldSize: 1,
 }
 
 function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
-  const legacy = layout as Partial<SceneLayout> & { groundReflection?: number }
   const next = structuredClone(DEFAULT_LAYOUT)
 
   if (layout.orb) {
@@ -65,10 +61,6 @@ function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
     }
   }
 
-  next.objectReflection =
-    layout.objectReflection ?? legacy.groundReflection ?? next.objectReflection
-  next.objectReflectionOpacity = layout.objectReflectionOpacity ?? next.objectReflectionOpacity
-  next.groundSurface = layout.groundSurface ?? legacy.groundReflection ?? next.groundSurface
   next.groupRotation = layout.groupRotation ?? next.groupRotation
   next.worldSize = layout.worldSize ?? next.worldSize
 
