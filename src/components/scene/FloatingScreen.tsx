@@ -117,7 +117,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
-    transparent: true,
     toneMapped: false,
   }), [videoTexture]) // eslint-disable-line react-hooks/exhaustive-deps
 
