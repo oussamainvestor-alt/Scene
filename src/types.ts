@@ -21,6 +21,7 @@ export type ScreenTransform = ObjectTransform & {
     left: number
     right: number
   }
+  contentScale: number
 }
 
 export type SceneLayout = {

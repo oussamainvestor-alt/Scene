@@ -10,26 +10,30 @@ type FloatingScreenProps = {
 
 const VERTEX_SHADER = `
   varying vec2 vUv;
-  varying vec2 vFlatUv;
   uniform float uCurveTop;
   uniform float uCurveBottom;
   uniform float uCurveLeft;
   uniform float uCurveRight;
+
   void main() {
     vUv = uv;
-    vFlatUv = uv;
+
     vec3 warped = position;
     float nx = uv.x * 2.0 - 1.0;
     float ny = uv.y * 2.0 - 1.0;
+
     float topWeight    = smoothstep(0.0, 1.0, uv.y)       * (1.0 - nx * nx);
     float bottomWeight = smoothstep(0.0, 1.0, 1.0 - uv.y) * (1.0 - nx * nx);
     float leftWeight   = smoothstep(0.0, 1.0, 1.0 - uv.x) * (1.0 - ny * ny);
-    float rightWeight  = smoothstep(0.0, 1.0, uv.x)        * (1.0 - ny * ny);
-    warped.y += ((uCurveTop * topWeight)   - (uCurveBottom * bottomWeight)) * 1.8;
-    warped.x += ((uCurveRight * rightWeight) - (uCurveLeft * leftWeight))   * 1.8;
+    float rightWeight  = smoothstep(0.0, 1.0, uv.x)       * (1.0 - ny * ny);
+
+    warped.y += ((uCurveTop * topWeight)    - (uCurveBottom * bottomWeight)) * 1.8;
+    warped.x += ((uCurveRight * rightWeight) - (uCurveLeft * leftWeight))    * 1.8;
+
     float depthCurve = (uCurveTop * topWeight) + (uCurveBottom * bottomWeight)
                      + (uCurveLeft * leftWeight) + (uCurveRight * rightWeight);
     warped.z += depthCurve * 0.9;
+
     gl_Position = projectionMatrix * modelViewMatrix * vec4(warped, 1.0);
   }
 `
@@ -37,16 +41,13 @@ const VERTEX_SHADER = `
 const FRAGMENT_SHADER = `
   precision highp float;
   varying vec2 vUv;
-  varying vec2 vFlatUv;
   uniform sampler2D uVideoTex;
   uniform float uVideoAspect;
   uniform float uScreenAspect;
   uniform float uHasVideo;
   uniform float uRadius;
   uniform vec2 uSize;
-  uniform vec3 uBezelColor;
   uniform vec3 uBackground;
-  uniform float uBezelWidth;
 
   float roundedRectSdf(vec2 p, vec2 halfSize, float radius) {
     vec2 q = abs(p) - (halfSize - vec2(radius));
@@ -56,34 +57,27 @@ const FRAGMENT_SHADER = `
   void main() {
     vec2 centered = (vUv - 0.5) * uSize;
     float d = roundedRectSdf(centered, 0.5 * uSize, uRadius);
-
     if (d > 0.0) discard;
-
-    float distFromEdge = -d;
-
-    if (distFromEdge < uBezelWidth) {
-      gl_FragColor = vec4(uBezelColor, 1.0);
-      return;
-    }
 
     vec3 color = uBackground;
 
     if (uHasVideo > 0.5) {
-      vec2 sampleUv = vFlatUv;
+      vec2 sampleUv = vUv;
+
       if (uVideoAspect > uScreenAspect) {
         float h = uScreenAspect / uVideoAspect;
         float yMin = 0.5 - h * 0.5;
         float yMax = 0.5 + h * 0.5;
-        if (vFlatUv.y >= yMin && vFlatUv.y <= yMax) {
-          sampleUv = vec2(vFlatUv.x, (vFlatUv.y - yMin) / h);
+        if (vUv.y >= yMin && vUv.y <= yMax) {
+          sampleUv = vec2(vUv.x, (vUv.y - yMin) / h);
           color = texture2D(uVideoTex, sampleUv).rgb;
         }
       } else {
         float w = uVideoAspect / uScreenAspect;
         float xMin = 0.5 - w * 0.5;
         float xMax = 0.5 + w * 0.5;
-        if (vFlatUv.x >= xMin && vFlatUv.x <= xMax) {
-          sampleUv = vec2((vFlatUv.x - xMin) / w, vFlatUv.y);
+        if (vUv.x >= xMin && vUv.x <= xMax) {
+          sampleUv = vec2((vUv.x - xMin) / w, vUv.y);
           color = texture2D(uVideoTex, sampleUv).rgb;
         }
       }
@@ -100,7 +94,6 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
   const planeHeight = planeWidth / screenAspect
   const safeRadius = Math.min(Math.max(0, transform.borderRadius), Math.min(planeWidth, planeHeight) * 0.45)
   const { top, bottom, left, right } = transform.edgeCurve
-  const bezelWidth = 0.08
 
   const [videoAspect, setVideoAspect] = useState(16 / 9)
   const lastPlayAttemptMs = useRef(0)
@@ -116,19 +109,17 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
 
   const material = useMemo(() => new ShaderMaterial({
     uniforms: {
-      uVideoTex:     { value: videoTexture },
-      uVideoAspect:  { value: 16 / 9 },
+      uVideoTex: { value: videoTexture },
+      uVideoAspect: { value: 16 / 9 },
       uScreenAspect: { value: screenAspect },
-      uHasVideo:     { value: 0 },
-      uRadius:       { value: safeRadius },
-      uSize:         { value: new Vector2(planeWidth, planeHeight) },
-      uBezelColor:   { value: new Vector3(0.02, 0.02, 0.02) },
-      uBackground:   { value: new Vector3(0.03, 0.04, 0.07) },
-      uCurveTop:     { value: top },
-      uCurveBottom:  { value: bottom },
-      uCurveLeft:    { value: left },
-      uCurveRight:   { value: right },
-      uBezelWidth:   { value: bezelWidth },
+      uHasVideo: { value: 0 },
+      uRadius: { value: safeRadius },
+      uSize: { value: new Vector2(planeWidth, planeHeight) },
+      uBackground: { value: new Vector3(0.03, 0.04, 0.07) },
+      uCurveTop: { value: top },
+      uCurveBottom: { value: bottom },
+      uCurveLeft: { value: left },
+      uCurveRight: { value: right },
     },
     vertexShader: VERTEX_SHADER,
     fragmentShader: FRAGMENT_SHADER,
@@ -186,15 +177,15 @@ export const FloatingScreen = forwardRef<Group, FloatingScreenProps>(({ videoUrl
 
   useFrame(({ clock }) => {
     const u = material.uniforms
-    u.uHasVideo.value     = videoUrl ? 1 : 0
-    u.uVideoAspect.value  = videoAspect
+    u.uHasVideo.value = videoUrl ? 1 : 0
+    u.uVideoAspect.value = videoAspect
     u.uScreenAspect.value = screenAspect
-    u.uRadius.value       = safeRadius
+    u.uRadius.value = safeRadius
     u.uSize.value.set(planeWidth, planeHeight)
-    u.uCurveTop.value     = top
-    u.uCurveBottom.value  = bottom
-    u.uCurveLeft.value    = left
-    u.uCurveRight.value   = right
+    u.uCurveTop.value = top
+    u.uCurveBottom.value = bottom
+    u.uCurveLeft.value = left
+    u.uCurveRight.value = right
 
     if (!videoUrl) return
 

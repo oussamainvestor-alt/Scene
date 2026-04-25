@@ -28,11 +28,12 @@ const DEFAULT_LAYOUT: SceneLayout = {
       left: 0,
       right: 0,
     },
+    contentScale: 1,
   },
   objectReflection: 0.62,
   objectReflectionOpacity: 0.9,
   groundSurface: 0.5,
-groupRotation: 0,
+  groupRotation: 0,
 }
 
 function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
@@ -59,6 +60,7 @@ function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
         left: layout.screen.edgeCurve?.left ?? next.screen.edgeCurve.left,
         right: layout.screen.edgeCurve?.right ?? next.screen.edgeCurve.right,
       },
+      contentScale: layout.screen.contentScale ?? next.screen.contentScale,
     }
   }
 
@@ -118,7 +120,6 @@ function getCameraPresetCoordinates(preset: CameraPresetId, layout: SceneLayout)
 
   switch (preset) {
     case 'frontCenter':
-      // Front-facing, dead-center to screen, camera behind orb.
       return {
         position: [screen[0], screen[1], orb[2] + Math.max(2.7, zGap + 1.1)],
         target: [screen[0], screen[1], screen[2]],

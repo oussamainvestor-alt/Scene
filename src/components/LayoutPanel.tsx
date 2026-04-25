@@ -1,464 +1,247 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { createPortal } from 'react-dom'
-import type { SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from '../types'
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { ClampToEdgeWrapping, Group, ShaderMaterial, Vector2, Vector3, VideoTexture } from 'three'
+import type { ScreenTransform } from '../../types'
 
-type LayoutPanelProps = {
-  layout: SceneLayout
-  dragTarget: 'none' | 'orb' | 'screen' | 'ground'
-  onDragTargetChange: (next: 'none' | 'orb' | 'screen' | 'ground') => void
-  onLayoutChange: (next: SceneLayout) => void
-  rendererType?: RendererType
-  onRendererTypeChange?: (next: RendererType) => void
-  hdrType?: HdrType
-  onHdrTypeChange?: (next: HdrType) => void
-  hdrFiles?: Array<{ label: string; value: string }>
-  orbLighting?: OrbLighting
-  onOrbLightingChange?: (next: OrbLighting) => void
-  groundGrid?: GroundGrid
-  onGroundGridChange?: (next: GroundGrid) => void
-  groupRotation?: number
-  onGroupRotationChange?: (next: number) => void
-  onDownloadLayout: () => void
-  onUploadLayout?: (file: File | null) => void
+type FloatingScreenProps = {
+  videoUrl: string | null
+  transform: ScreenTransform
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
+const VERTEX_SHADER = `
+  varying vec2 vUv;
+  varying vec3 vLocalPos;
+  uniform float uCurveTop;
+  uniform float uCurveBottom;
+  uniform float uCurveLeft;
+  uniform float uCurveRight;
 
-export function LayoutPanel(props: LayoutPanelProps) {
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  void main() {
+    vUv = uv;
+    vLocalPos = position;
 
-  const beginDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
-    const startX = event.clientX
-    const startY = event.clientY
-    const initial = { ...offset }
+    vec3 warped = position;
+    float nx = uv.x * 2.0 - 1.0;
+    float ny = uv.y * 2.0 - 1.0;
 
-    const onMove = (moveEvent: MouseEvent) => {
-      setOffset({
-        x: initial.x + (moveEvent.clientX - startX),
-        y: initial.y + (moveEvent.clientY - startY),
-      })
+    float topWeight    = smoothstep(0.0, 1.0, uv.y)       * (1.0 - nx * nx);
+    float bottomWeight = smoothstep(0.0, 1.0, 1.0 - uv.y) * (1.0 - nx * nx);
+    float leftWeight   = smoothstep(0.0, 1.0, 1.0 - uv.x) * (1.0 - ny * ny);
+    float rightWeight  = smoothstep(0.0, 1.0, uv.x)       * (1.0 - ny * ny);
+
+    warped.y += ((uCurveTop * topWeight)    - (uCurveBottom * bottomWeight)) * 1.8;
+    warped.x += ((uCurveRight * rightWeight) - (uCurveLeft * leftWeight))    * 1.8;
+
+    float depthCurve = (uCurveTop * topWeight) + (uCurveBottom * bottomWeight)
+                     + (uCurveLeft * leftWeight) + (uCurveRight * rightWeight);
+    warped.z += depthCurve * 0.9;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(warped, 1.0);
+  }
+`
+
+const FRAGMENT_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  varying vec3 vLocalPos;
+  uniform sampler2D uVideoTex;
+  uniform float uVideoAspect;
+  uniform float uScreenAspect;
+  uniform float uHasVideo;
+  uniform float uRadius;
+  uniform vec2 uSize;
+  uniform vec3 uBackground;
+  uniform float uContentScale;
+
+  float roundedRectSdf(vec2 p, vec2 halfSize, float radius) {
+    vec2 q = abs(p) - (halfSize - vec2(radius));
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+  }
+
+  void main() {
+    // Compute flat UVs from the undeformed local position.
+    // This ensures the video stays flat even when the mesh curves.
+    vec2 flatUv = vec2(vLocalPos.x / uSize.x + 0.5, vLocalPos.y / uSize.y + 0.5);
+
+    // Rounded-rectangle clip (screen border)
+    vec2 centered = (flatUv - 0.5) * uSize;
+    float d = roundedRectSdf(centered, 0.5 * uSize, uRadius);
+    if (d > 0.0) discard;
+
+    vec3 color = uBackground;
+
+    if (uHasVideo > 0.5) {
+      // Aspect-ratio-correct video size in UV space
+      float videoW, videoH;
+      if (uVideoAspect > uScreenAspect) {
+        videoW = 1.0;
+        videoH = uScreenAspect / uVideoAspect;
+      } else {
+        videoW = uVideoAspect / uScreenAspect;
+        videoH = 1.0;
+      }
+
+      // Apply content scale (zoom in/out)
+      videoW *= uContentScale;
+      videoH *= uContentScale;
+
+      float xMin = 0.5 - videoW * 0.5;
+      float yMin = 0.5 - videoH * 0.5;
+      float xMax = 0.5 + videoW * 0.5;
+      float yMax = 0.5 + videoH * 0.5;
+
+      if (flatUv.x >= xMin && flatUv.x <= xMax && flatUv.y >= yMin && flatUv.y <= yMax) {
+        vec2 texUv = vec2(
+          (flatUv.x - xMin) / videoW,
+          (flatUv.y - yMin) / videoH
+        );
+        color = texture2D(uVideoTex, texUv).rgb;
+      }
     }
 
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+    gl_FragColor = vec4(color, 1.0);
+  }
+`
+
+export const FloatingScreen = forwardRef(({ videoUrl, transform }, ref) => {
+  const planeWidth = 2.7
+  const [ratioW, ratioH] = transform.aspectRatio
+  const screenAspect = Math.max(1, ratioW || 1) / Math.max(1, ratioH || 1)
+  const planeHeight = planeWidth / screenAspect
+  const safeRadius = Math.min(Math.max(0, transform.borderRadius), Math.min(planeWidth, planeHeight) * 0.45)
+  const { top, bottom, left, right } = transform.edgeCurve
+  const contentScale = transform.contentScale ?? 1.0
+
+  const [videoAspect, setVideoAspect] = useState(16 / 9)
+  const lastPlayAttemptMs = useRef(0)
+
+  const videoEl = useMemo(() => document.createElement('video'), [])
+
+  const videoTexture = useMemo(() => {
+    const t = new VideoTexture(videoEl)
+    t.wrapS = ClampToEdgeWrapping
+    t.wrapT = ClampToEdgeWrapping
+    return t
+  }, [videoEl])
+
+  const material = useMemo(() => new ShaderMaterial({
+    uniforms: {
+      uVideoTex: { value: videoTexture },
+      uVideoAspect: { value: 16 / 9 },
+      uScreenAspect: { value: screenAspect },
+      uHasVideo: { value: 0 },
+      uRadius: { value: safeRadius },
+      uSize: { value: new Vector2(planeWidth, planeHeight) },
+      uBackground: { value: new Vector3(0.03, 0.04, 0.07) },
+      uCurveTop: { value: top },
+      uCurveBottom: { value: bottom },
+      uCurveLeft: { value: left },
+      uCurveRight: { value: right },
+      uContentScale: { value: contentScale },
+    },
+    vertexShader: VERTEX_SHADER,
+    fragmentShader: FRAGMENT_SHADER,
+    toneMapped: false,
+  }), [videoTexture]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const el = videoEl
+    el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none'
+    document.body.appendChild(el)
+    return () => {
+      if (el.parentNode) el.parentNode.removeChild(el)
+    }
+  }, [videoEl])
+
+  useEffect(() => {
+    const attemptPlay = () => { videoEl.play().catch(() => undefined) }
+
+    if (!videoUrl) {
+      videoEl.pause()
+      videoEl.removeAttribute('src')
+      videoEl.load()
+      return
     }
 
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
+    videoEl.src = videoUrl
+    videoEl.loop = true
+    videoEl.muted = true
+    videoEl.autoplay = true
+    videoEl.preload = 'auto'
+    videoEl.playsInline = true
 
-  const setPos = (
-    objectKey: 'orb' | 'screen',
-    axis: 0 | 1 | 2,
-    value: number,
-  ) => {
-    const next = structuredClone(props.layout)
-    next[objectKey].position[axis] = value
-    props.onLayoutChange(next)
-  }
+    const onMeta = () => {
+      if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        setVideoAspect(videoEl.videoWidth / videoEl.videoHeight)
+      }
+    }
+    const onCanPlay = () => {
+      attemptPlay()
+      videoTexture.needsUpdate = true
+    }
 
-  const setScale = (objectKey: 'orb' | 'screen', value: number) => {
-    const next = structuredClone(props.layout)
-    next[objectKey].scale = clamp(value, 0.2, 4)
-    props.onLayoutChange(next)
-  }
+    videoEl.addEventListener('loadedmetadata', onMeta)
+    videoEl.addEventListener('canplay', onCanPlay)
+    window.addEventListener('pointerdown', attemptPlay, { once: true })
+    videoEl.load()
+    attemptPlay()
 
-  const setScreenAspectRatio = (index: 0 | 1, value: number) => {
-    const next = structuredClone(props.layout)
-    const safeValue = clamp(value || 1, 1, 1000)
-    next.screen.aspectRatio[index] = safeValue
-    props.onLayoutChange(next)
-  }
+    return () => {
+      videoEl.removeEventListener('loadedmetadata', onMeta)
+      videoEl.removeEventListener('canplay', onCanPlay)
+      window.removeEventListener('pointerdown', attemptPlay)
+    }
+  }, [videoEl, videoUrl, videoTexture])
 
-  const setScreenBorderRadius = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.screen.borderRadius = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
+  useFrame(({ clock }) => {
+    const u = material.uniforms
+    u.uHasVideo.value = videoUrl ? 1 : 0
+    u.uVideoAspect.value = videoAspect
+    u.uScreenAspect.value = screenAspect
+    u.uRadius.value = safeRadius
+    u.uSize.value.set(planeWidth, planeHeight)
+    u.uCurveTop.value = top
+    u.uCurveBottom.value = bottom
+    u.uCurveLeft.value = left
+    u.uCurveRight.value = right
+    u.uContentScale.value = contentScale
 
-  const setScreenCurvePair = (value: 'horizontal' | 'vertical') => {
-    const next = structuredClone(props.layout)
-    next.screen.curvePair = value
-    props.onLayoutChange(next)
-  }
+    if (!videoUrl) return
 
-  const setScreenEdgeCurve = (side: 'top' | 'bottom' | 'left' | 'right', value: number) => {
-    const next = structuredClone(props.layout)
-    next.screen.edgeCurve[side] = clamp(value || 0, -0.6, 0.6)
-    props.onLayoutChange(next)
-  }
+    const now = clock.elapsedTime * 1000
+    if (videoEl.paused && now - lastPlayAttemptMs.current > 800) {
+      lastPlayAttemptMs.current = now
+      videoEl.play().catch(() => undefined)
+    }
 
-  const setObjectReflection = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.objectReflection = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
+    if (videoEl.readyState >= 2) {
+      videoTexture.needsUpdate = true
+    }
+  })
 
-  const setObjectReflectionOpacity = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.objectReflectionOpacity = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
+  useEffect(() => {
+    return () => {
+      videoEl.pause()
+      videoEl.removeAttribute('src')
+      videoEl.load()
+    }
+  }, [videoEl])
 
-  const setGroundSurface = (value: number) => {
-    const next = structuredClone(props.layout)
-    next.groundSurface = clamp(value || 0, 0, 1)
-    props.onLayoutChange(next)
-  }
-
-  const curvePair = props.layout.screen.curvePair
-  const firstCurveKey = curvePair === 'horizontal' ? 'top' : 'left'
-  const secondCurveKey = curvePair === 'horizontal' ? 'bottom' : 'right'
-
-  const panel = (
-    <aside
-      className="layout-panel"
-      style={{
-        position: 'fixed',
-        top: '16px',
-        right: '16px',
-        zIndex: 9999,
-        width: '260px',
-        maxWidth: '280px',
-        maxHeight: 'calc(100vh - 20px)',
-        overflow: 'auto',
-        borderRadius: '12px',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        background: 'rgba(10, 14, 24, 0.84)',
-        backdropFilter: 'blur(12px)',
-        color: '#eef3ff',
-        padding: '10px',
-        boxShadow: '0 8px 22px rgba(0, 0, 0, 0.42)',
-        boxSizing: 'border-box',
-        transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`,
+  return (
+    <group
+      ref={(node) => {
+        if (typeof ref === 'function') ref(node)
+        else if (ref) ref.current = node
       }}
+      position={transform.position}
+      scale={[transform.scale, transform.scale, transform.scale]}
     >
-      <div className="panel-drag-handle" onMouseDown={beginDrag}>
-        <h3>Layout Controls</h3>
-      </div>
-      <div className="layout-row">
-        <button className="btn secondary" onClick={() => props.onDragTargetChange('ground')}>
-          Drag ground
-        </button>
-        <button className="btn secondary" onClick={() => props.onDragTargetChange('orb')}>
-          Drag orb
-        </button>
-        <button className="btn secondary" onClick={() => props.onDragTargetChange('screen')}>
-          Drag screen
-        </button>
-      </div>
-      <button className="btn secondary full" onClick={() => props.onDragTargetChange('none')}>
-        Disable drag ({props.dragTarget})
-      </button>
-
-      <div className="divider" />
-      <p className="tiny-title">Orb</p>
-      <div className="compact-grid">
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.orb.position[0]}
-          onChange={(e) => setPos('orb', 0, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.orb.position[1]}
-          onChange={(e) => setPos('orb', 1, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.orb.position[2]}
-          onChange={(e) => setPos('orb', 2, Number(e.target.value))}
-        />
-      </div>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0.4"
-          max="2.4"
-          step="0.01"
-          value={props.layout.orb.scale}
-          onChange={(e) => setScale('orb', Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0.4"
-          max="2.4"
-          step="0.01"
-          value={props.layout.orb.scale}
-          onChange={(e) => setScale('orb', Number(e.target.value))}
-        />
-      </div>
-
-      <p className="tiny-title">Screen</p>
-      <div className="compact-grid">
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.screen.position[0]}
-          onChange={(e) => setPos('screen', 0, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.screen.position[1]}
-          onChange={(e) => setPos('screen', 1, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          step="0.1"
-          value={props.layout.screen.position[2]}
-          onChange={(e) => setPos('screen', 2, Number(e.target.value))}
-        />
-      </div>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0.4"
-          max="2.4"
-          step="0.01"
-          value={props.layout.screen.scale}
-          onChange={(e) => setScale('screen', Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0.4"
-          max="2.4"
-          step="0.01"
-          value={props.layout.screen.scale}
-          onChange={(e) => setScale('screen', Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Aspect Ratio (W : H)</p>
-      <div className="scale-row">
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={props.layout.screen.aspectRatio[0]}
-          onChange={(e) => setScreenAspectRatio(0, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={props.layout.screen.aspectRatio[1]}
-          onChange={(e) => setScreenAspectRatio(1, Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Rounded Corners (Border Radius)</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="0.5"
-          step="0.01"
-          value={props.layout.screen.borderRadius}
-          onChange={(e) => setScreenBorderRadius(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.screen.borderRadius}
-          onChange={(e) => setScreenBorderRadius(Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Curve Pair</p>
-      <div className="layout-row">
-        <button
-          className="btn secondary"
-          onClick={() => setScreenCurvePair('horizontal')}
-          style={{ opacity: curvePair === 'horizontal' ? 1 : 0.65 }}
-        >
-          Top + Bottom
-        </button>
-        <button
-          className="btn secondary"
-          onClick={() => setScreenCurvePair('vertical')}
-          style={{ opacity: curvePair === 'vertical' ? 1 : 0.65 }}
-        >
-          Left + Right
-        </button>
-      </div>
-      <p className="tiny-title">
-        {curvePair === 'horizontal' ? 'Top / Bottom Curve' : 'Left / Right Curve'} (inner/outer)
-      </p>
-      <div className="scale-row">
-        <input
-          type="number"
-          min="-0.6"
-          max="0.6"
-          step="0.01"
-          value={props.layout.screen.edgeCurve[firstCurveKey]}
-          onChange={(e) => setScreenEdgeCurve(firstCurveKey, Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="-0.6"
-          max="0.6"
-          step="0.01"
-          value={props.layout.screen.edgeCurve[secondCurveKey]}
-          onChange={(e) => setScreenEdgeCurve(secondCurveKey, Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Reflection: Objects (Orb + Screen)</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflection}
-          onChange={(e) => setObjectReflection(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflection}
-          onChange={(e) => setObjectReflection(Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Reflection: Objects Opacity</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflectionOpacity}
-          onChange={(e) => setObjectReflectionOpacity(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.objectReflectionOpacity}
-          onChange={(e) => setObjectReflectionOpacity(Number(e.target.value))}
-        />
-      </div>
-      <p className="tiny-title">Ground Surface Strength</p>
-      <div className="scale-row">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.groundSurface}
-          onChange={(e) => setGroundSurface(Number(e.target.value))}
-        />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          value={props.layout.groundSurface}
-          onChange={(e) => setGroundSurface(Number(e.target.value))}
-        />
-      </div>
-
-      {props.rendererType !== undefined && props.onRendererTypeChange && (
-        <>
-          <p className="tiny-title">Renderer</p>
-          <select
-            className="select-input"
-            value={props.rendererType}
-            onChange={(e) => props.onRendererTypeChange?.(e.target.value as RendererType)}
-          >
-            <option value="webgpu">WebGPU</option>
-            <option value="webgl2">WebGL2</option>
-          </select>
-        </>
-      )}
-
-      {props.hdrType !== undefined && props.onHdrTypeChange && (
-        <>
-          <p className="tiny-title">HDR</p>
-          <select
-            className="select-input"
-            value={props.hdrType ?? ''}
-            onChange={(e) => props.onHdrTypeChange?.(e.target.value || null)}
-          >
-            <option value="">Off</option>
-            {props.hdrFiles?.map((hdr) => (
-              <option key={hdr.value} value={hdr.value}>
-                {hdr.label}
-              </option>
-            ))}
-          </select>
-        </>
-      )}
-
-      {props.groundGrid !== undefined && props.onGroundGridChange && (
-        <>
-          <p className="tiny-title">Ground Tiles</p>
-          <select
-            className="select-input"
-            value={props.groundGrid}
-            onChange={(e) => props.onGroundGridChange?.(Number(e.target.value) as GroundGrid)}
-          >
-            <option value={1}>1×1</option>
-            <option value={2}>2×2</option>
-            <option value={4}>4×4</option>
-            <option value={6}>6×6</option>
-            <option value={8}>8×8</option>
-          </select>
-        </>
-      )}
-
-      {props.groupRotation !== undefined && props.onGroupRotationChange && (
-        <>
-          <p className="tiny-title">Rotate (degrees)</p>
-          <input
-            type="number"
-            className="select-input"
-            value={(props.groupRotation * 180 / Math.PI) % 360}
-            onChange={(e) => props.onGroupRotationChange?.(Number(e.target.value) * Math.PI / 180)}
-          />
-        </>
-      )}
-
-      {props.orbLighting !== undefined && props.onOrbLightingChange && (
-        <>
-          <p className="tiny-title">Orb Light</p>
-          <select
-            className="select-input"
-            value={props.orbLighting ? 'on' : 'off'}
-            onChange={(e) => props.onOrbLightingChange?.(e.target.value === 'on')}
-          >
-            <option value="on">On</option>
-            <option value="off">Off</option>
-          </select>
-        </>
-      )}
-
-      <div className="divider" />
-      <div className="layout-row">
-        <button className="btn secondary" onClick={props.onDownloadLayout}>
-          Download
-        </button>
-        <label className="btn secondary upload-btn">
-          Upload
-          <input
-            type="file"
-            accept="application/json"
-            onChange={(event) => {
-              props.onUploadLayout?.(event.target.files?.[0] ?? null)
-            }}
-          />
-        </label>
-      </div>
-    </aside>
+      <mesh>
+        <planeGeometry args={[planeWidth, planeHeight, 64, 64]} />
+        <primitive object={material} attach="material" />
+      </mesh>
+    </group>
   )
+})
 
-  return createPortal(panel, document.body)
-}
+FloatingScreen.displayName = 'FloatingScreen'

@@ -1,0 +1,38 @@
+# Curved Screen Fix - Issue and Files
+
+## The Problem
+
+The current implementation has TWO issues:
+
+1. **Bezel vs Video area confusion** - The shader logic for determining bezel vs video area is inverted or broken
+2. **Video is curved along with screen** - The video texture is being mapped using warped UVs from the vertex shader, causing the video content to appear curved/bent like the screen geometry
+
+## Files to Touch
+
+### 1. `src/components/scene/FloatingScreen.tsx`
+
+This is the ONLY file that needs to be modified.
+
+## Current State
+
+The file currently uses a single mesh with vertex warping for the curved screen effect. However:
+- The bezel border logic is broken (showing bezel where video should be, video where bezel should be)
+- The video texture sampling uses `vUv` which is warped by the vertex shader, causing the video content to curve with the screen
+
+## Expected Behavior
+
+1. **Curved screen geometry** - The mesh vertices should be warped (current behavior is fine)
+2. **Bezel border** - Fixed width dark border around the screen
+3. **Flat video inside** - Video content should appear FLAT, not curved, even though the screen geometry is curved
+
+## Analogy
+
+Think of a curved TV - the glass is curved, but the image on it is flat. The content is not bent by the screen curve.
+
+## What Needs to Change
+
+The fragment shader needs to:
+1. Fix bezel border detection (draw bezel near edges, video in center)
+2. Use FLAT UV coordinates for video texture sampling, NOT the warped vUv from vertex shader
+
+The vertex shader passes both warped vUv and flat vFlatUv - the fragment shader should use vFlatUv for sampling the video texture.
