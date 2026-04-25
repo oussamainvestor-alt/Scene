@@ -6,7 +6,7 @@ import { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from '../../types'
 import { FloatingScreen } from './FloatingScreen'
 import { Orb } from './Orb'
-import { ConcreteGround } from './Ground'
+import { WetAsphaltGround } from './Ground'
 
 type EnvironmentSceneProps = {
   videoUrl: string | null
@@ -259,61 +259,9 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
         />
         <pointLight intensity={0.7} position={[-2.5, 1.4, -2]} color="#41618f" />
 
-        {groundGrid === 1 ? (
-          <group ref={groundRef}>
-            <ConcreteGround scale={1} />
-          </group>
-        ) : groundGrid === 2 ? (
-          <group ref={groundRef}>
-            <ConcreteGround scale={1} position={[-5, 0, -5]} />
-            <ConcreteGround scale={1} position={[5, 0, -5]} />
-            <ConcreteGround scale={1} position={[-5, 0, 5]} />
-            <ConcreteGround scale={1} position={[5, 0, 5]} />
-          </group>
-        ) : groundGrid === 4 ? (
-          <group ref={groundRef}>
-            <ConcreteGround scale={1} position={[-7.5, 0, -7.5]} />
-            <ConcreteGround scale={1} position={[-2.5, 0, -7.5]} />
-            <ConcreteGround scale={1} position={[2.5, 0, -7.5]} />
-            <ConcreteGround scale={1} position={[7.5, 0, -7.5]} />
-            <ConcreteGround scale={1} position={[-7.5, 0, -2.5]} />
-            <ConcreteGround scale={1} position={[-2.5, 0, -2.5]} />
-            <ConcreteGround scale={1} position={[2.5, 0, -2.5]} />
-            <ConcreteGround scale={1} position={[7.5, 0, -2.5]} />
-            <ConcreteGround scale={1} position={[-7.5, 0, 2.5]} />
-            <ConcreteGround scale={1} position={[-2.5, 0, 2.5]} />
-            <ConcreteGround scale={1} position={[2.5, 0, 2.5]} />
-            <ConcreteGround scale={1} position={[7.5, 0, 2.5]} />
-            <ConcreteGround scale={1} position={[-7.5, 0, 7.5]} />
-            <ConcreteGround scale={1} position={[-2.5, 0, 7.5]} />
-            <ConcreteGround scale={1} position={[2.5, 0, 7.5]} />
-            <ConcreteGround scale={1} position={[7.5, 0, 7.5]} />
-          </group>
-        ) : groundGrid === 6 ? (
-          <group ref={groundRef}>
-            {[...Array(6)].map((_, i) =>
-              [...Array(6)].map((_, j) => (
-                <ConcreteGround
-                  key={`${i}-${j}`}
-                  scale={1}
-                  position={[(i - 2.5) * 5, 0, (j - 2.5) * 5]}
-                />
-              ))
-            )}
-          </group>
-        ) : (
-          <group ref={groundRef}>
-            {[...Array(8)].map((_, i) =>
-              [...Array(8)].map((_, j) => (
-                <ConcreteGround
-                  key={`${i}-${j}`}
-                  scale={1}
-                  position={[(i - 3.5) * 5, 0, (j - 3.5) * 5]}
-                />
-              ))
-            )}
-          </group>
-        )}
+        <group ref={groundRef}>
+          <WetAsphaltGround groundGrid={groundGrid} />
+        </group>
         <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>
           <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} lightEnabled={orbLighting} />
 
