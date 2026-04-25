@@ -409,6 +409,8 @@ export function LayoutPanel(props: LayoutPanelProps) {
             <option value={1}>1×1</option>
             <option value={2}>2×2</option>
             <option value={4}>4×4</option>
+            <option value={6}>6×6</option>
+            <option value={8}>8×8</option>
           </select>
         </>
       )}

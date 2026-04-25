@@ -238,29 +238,53 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
           </group>
         ) : groundGrid === 2 ? (
           <group ref={groundRef}>
+            <ConcreteGround scale={1} position={[-5, 0, -5]} />
+            <ConcreteGround scale={1} position={[5, 0, -5]} />
+            <ConcreteGround scale={1} position={[-5, 0, 5]} />
+            <ConcreteGround scale={1} position={[5, 0, 5]} />
+          </group>
+        ) : groundGrid === 4 ? (
+          <group ref={groundRef}>
+            <ConcreteGround scale={1} position={[-7.5, 0, -7.5]} />
+            <ConcreteGround scale={1} position={[-2.5, 0, -7.5]} />
+            <ConcreteGround scale={1} position={[2.5, 0, -7.5]} />
+            <ConcreteGround scale={1} position={[7.5, 0, -7.5]} />
+            <ConcreteGround scale={1} position={[-7.5, 0, -2.5]} />
             <ConcreteGround scale={1} position={[-2.5, 0, -2.5]} />
             <ConcreteGround scale={1} position={[2.5, 0, -2.5]} />
+            <ConcreteGround scale={1} position={[7.5, 0, -2.5]} />
+            <ConcreteGround scale={1} position={[-7.5, 0, 2.5]} />
             <ConcreteGround scale={1} position={[-2.5, 0, 2.5]} />
             <ConcreteGround scale={1} position={[2.5, 0, 2.5]} />
+            <ConcreteGround scale={1} position={[7.5, 0, 2.5]} />
+            <ConcreteGround scale={1} position={[-7.5, 0, 7.5]} />
+            <ConcreteGround scale={1} position={[-2.5, 0, 7.5]} />
+            <ConcreteGround scale={1} position={[2.5, 0, 7.5]} />
+            <ConcreteGround scale={1} position={[7.5, 0, 7.5]} />
+          </group>
+        ) : groundGrid === 6 ? (
+          <group ref={groundRef}>
+            {[...Array(6)].map((_, i) =>
+              [...Array(6)].map((_, j) => (
+                <ConcreteGround 
+                  key={`${i}-${j}`}
+                  scale={1} 
+                  position={[(i - 2.5) * 5, 0, (j - 2.5) * 5]} 
+                />
+              ))
+            )}
           </group>
         ) : (
-          <group>
-            <ConcreteGround scale={1} position={[-3.75, 0, -3.75]} />
-            <ConcreteGround scale={1} position={[-1.25, 0, -3.75]} />
-            <ConcreteGround scale={1} position={[1.25, 0, -3.75]} />
-            <ConcreteGround scale={1} position={[3.75, 0, -3.75]} />
-            <ConcreteGround scale={1} position={[-3.75, 0, -1.25]} />
-            <ConcreteGround scale={1} position={[-1.25, 0, -1.25]} />
-            <ConcreteGround scale={1} position={[1.25, 0, -1.25]} />
-            <ConcreteGround scale={1} position={[3.75, 0, -1.25]} />
-            <ConcreteGround scale={1} position={[-3.75, 0, 1.25]} />
-            <ConcreteGround scale={1} position={[-1.25, 0, 1.25]} />
-            <ConcreteGround scale={1} position={[1.25, 0, 1.25]} />
-            <ConcreteGround scale={1} position={[3.75, 0, 1.25]} />
-            <ConcreteGround scale={1} position={[-3.75, 0, 3.75]} />
-            <ConcreteGround scale={1} position={[-1.25, 0, 3.75]} />
-            <ConcreteGround scale={1} position={[1.25, 0, 3.75]} />
-            <ConcreteGround scale={1} position={[3.75, 0, 3.75]} />
+          <group ref={groundRef}>
+            {[...Array(8)].map((_, i) =>
+              [...Array(8)].map((_, j) => (
+                <ConcreteGround 
+                  key={`${i}-${j}`}
+                  scale={1} 
+                  position={[(i - 3.5) * 5, 0, (j - 3.5) * 5]} 
+                />
+              ))
+            )}
           </group>
         )}
         <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>

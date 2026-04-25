@@ -35,4 +35,4 @@ export type SceneLayout = {
 export type HdrType = string | null
 export type RendererType = 'webgl2' | 'webgpu'
 export type OrbLighting = boolean
-export type GroundGrid = 1 | 2 | 4
+export type GroundGrid = 1 | 2 | 4 | 6 | 8

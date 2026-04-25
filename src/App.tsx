@@ -32,7 +32,7 @@ const DEFAULT_LAYOUT: SceneLayout = {
   objectReflection: 0.62,
   objectReflectionOpacity: 0.9,
   groundSurface: 0.5,
-  groupRotation: 0,
+groupRotation: 0,
 }
 
 function normalizeLayout(layout: Partial<SceneLayout>): SceneLayout {
