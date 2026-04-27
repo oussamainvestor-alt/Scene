@@ -6,6 +6,7 @@ import { EnvironmentScene } from './components/scene/EnvironmentScene'
 import type { EnvironmentSceneHandle } from './components/scene/EnvironmentScene'
 import { useAudioDriver } from './hooks/useAudioDriver'
 import { useRecorder } from './hooks/useRecorder'
+import { initSceneBridge } from './hooks/useSceneBridge'
 import type { Vec3, CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from './types'
 
 export const HDR_FILES: Array<{ label: string; value: string }> = [
@@ -173,7 +174,50 @@ function App() {
     clearRecording,
   } = useRecorder()
 
-  const orbEnergy = useMemo(() => Math.min(1, level * 2.2), [level])
+  useEffect(() => {
+    const initBridge = () => {
+      const canvas = document.querySelector('canvas')
+      if (canvas && !(window as unknown as { __SCENE_BRIDGE__?: unknown }).__SCENE_BRIDGE__) {
+        initSceneBridge(
+          canvas,
+          (layout) => setLayout(layout as SceneLayout),
+          (camera) => setCameraCoordinates(camera as CameraCoordinates)
+        )
+      }
+    }
+    initBridge()
+    const interval = setInterval(initBridge, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    const handleVideoUrl = (e: Event) => {
+      const url = (e as CustomEvent<string>).detail
+      setVideoUrl(url)
+      setVideoFileName(url.split('/').pop() || 'Video loaded')
+    }
+    const handleEnergy = (e: Event) => {
+      const energy = (e as CustomEvent<number>).detail
+      window.dispatchEvent(new CustomEvent('__orb_energy', { detail: energy }))
+    }
+    window.addEventListener('__bridge_setVideoUrl', handleVideoUrl as EventListener)
+    window.addEventListener('__bridge_setEnergy', handleEnergy as EventListener)
+    return () => {
+      window.removeEventListener('__bridge_setVideoUrl', handleVideoUrl as EventListener)
+      window.removeEventListener('__bridge_setEnergy', handleEnergy as EventListener)
+    }
+  }, [])
+
+  const bridgeEnergyRef = useRef(0)
+  useEffect(() => {
+    const handleOrbEnergy = (e: Event) => {
+      bridgeEnergyRef.current = (e as CustomEvent<number>).detail
+    }
+    window.addEventListener('__orb_energy', handleOrbEnergy as EventListener)
+    return () => window.removeEventListener('__orb_energy', handleOrbEnergy as EventListener)
+  }, [])
+
+  const orbEnergy = useMemo(() => Math.min(1, (level + bridgeEnergyRef.current * 0.5) * 2.2), [level])
 
   const applySnapshot = (snapshot: EditorSnapshot) => {
     const cloned = cloneSnapshot(snapshot)
