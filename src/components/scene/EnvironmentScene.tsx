@@ -1,7 +1,8 @@
-import { OrbitControls, TransformControls, Environment } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
+import { OrbitControls, TransformControls } from '@react-three/drei'
+import { Canvas, useThree } from '@react-three/fiber'
 import { forwardRef, Suspense, useEffect, useImperativeHandle, useRef } from 'react'
-import { Group, Vector3 } from 'three'
+import { Group, PMREMGenerator, Vector3 } from 'three'
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { CameraCoordinates, SceneLayout, HdrType, RendererType, OrbLighting, GroundGrid } from '../../types'
 import { FloatingScreen } from './FloatingScreen'
@@ -29,6 +30,29 @@ type SceneRef = {
 }
 
 export type EnvironmentSceneHandle = SceneRef
+
+function HdrEnvironment({ file }: { file: string }) {
+  const { gl, scene } = useThree()
+
+  useEffect(() => {
+    let cancelled = false
+    const pmrem = new PMREMGenerator(gl)
+    pmrem.compileEquirectangularShader()
+    new RGBELoader().load(file, (texture) => {
+      if (cancelled) { texture.dispose(); pmrem.dispose(); return }
+      const envMap = pmrem.fromEquirectangular(texture).texture
+      scene.environment = envMap
+      texture.dispose()
+      pmrem.dispose()
+    })
+    return () => {
+      cancelled = true
+      scene.environment = null
+    }
+  }, [file, gl, scene])
+
+  return null
+}
 
 export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSceneProps>(
   (
@@ -264,11 +288,7 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
             <WetAsphaltGround groundGrid={groundGrid} />
           </Suspense>
         </group>
-        {hdrType && hdrType.length > 0 && (
-          <Suspense key={hdrType} fallback={null}>
-            <Environment background={false} files={`/${hdrType}`} />
-          </Suspense>
-        )}
+        {hdrType && hdrType.length > 0 && <HdrEnvironment file={`/${hdrType}`} />}
 
         <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>
           <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} lightEnabled={orbLighting} />
