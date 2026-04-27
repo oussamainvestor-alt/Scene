@@ -12,7 +12,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(npm install *)",
-      "Bash(vercel *)"
+      "Bash(vercel *)",
+      "Bash(curl *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
