@@ -264,14 +264,14 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
             <WetAsphaltGround groundGrid={groundGrid} />
           </Suspense>
         </group>
+        {hdrType && hdrType.length > 0 && (
+          <Suspense key={hdrType} fallback={null}>
+            <Environment background={false} files={`/${hdrType}`} />
+          </Suspense>
+        )}
+
         <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>
           <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} lightEnabled={orbLighting} />
-
-          {hdrType && hdrType.length > 0 && (
-            <Suspense fallback={null}>
-              <Environment background={false} files={`/${hdrType}`} />
-            </Suspense>
-          )}
           <FloatingScreen ref={screenRef} videoUrl={videoUrl} transform={layout.screen} />
         </group>
 
