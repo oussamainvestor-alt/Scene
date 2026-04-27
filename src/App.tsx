@@ -113,9 +113,9 @@ function getCameraPresetCoordinates(preset: CameraPresetId, layout: SceneLayout)
   const sinR = Math.sin(rot)
 
   const toWorld = (p: Vec3): Vec3 => [
-    p[0] * cosR - p[2] * sinR,
+    p[0] * cosR + p[2] * sinR,
     p[1],
-    p[0] * sinR + p[2] * cosR,
+    -p[0] * sinR + p[2] * cosR,
   ]
 
   const orbW = toWorld(layout.orb.position)
