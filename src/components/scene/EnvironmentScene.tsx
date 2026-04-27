@@ -267,7 +267,11 @@ export const EnvironmentScene = forwardRef<EnvironmentSceneHandle, EnvironmentSc
         <group ref={groupRef} rotation={[0, layout.groupRotation, 0]}>
           <Orb ref={orbRef} energy={orbEnergy} transform={layout.orb} lightEnabled={orbLighting} />
 
-          {hdrType && hdrType.length > 0 && <Environment background={false} files={`/${hdrType}`} />}
+          {hdrType && hdrType.length > 0 && (
+            <Suspense fallback={null}>
+              <Environment background={false} files={`/${hdrType}`} />
+            </Suspense>
+          )}
           <FloatingScreen ref={screenRef} videoUrl={videoUrl} transform={layout.screen} />
         </group>
 
